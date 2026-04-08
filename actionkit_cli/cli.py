@@ -65,7 +65,7 @@ def cleanup(ctx, result, **kwargs):
 
 
 # Import and register command groups
-from actionkit_cli.commands import action, mailer, page, report, translation, user  # noqa: E402
+from actionkit_cli.commands import action, hash, mailer, page, report, translation, user  # noqa: E402
 
 cli.add_command(user.user)
 cli.add_command(page.page)
@@ -73,3 +73,4 @@ cli.add_command(action.action)
 cli.add_command(mailer.mailer)
 cli.add_command(report.report)
 cli.add_command(translation.translation)
+cli.add_command(hash.hash)
