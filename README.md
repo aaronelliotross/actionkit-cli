@@ -4,17 +4,17 @@ A command-line interface for the [ActionKit](https://actionkit.com/) REST API.
 
 ## Installation
 
-Requires Python 3.13+.
+Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 # Install uv if you don't have it
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Clone and install
-git clone <repo-url>
-cd actionkit-cli
-uv sync
+# Install the actionkit command
+uv tool install git+https://github.com/aaronelliotross/actionkit-cli.git
 ```
+
+This installs the `actionkit` command into `~/.local/bin/`.
 
 ### Configuration
 
