@@ -18,12 +18,18 @@ def mailer():
 @click.option("--offset", "-o", default=0, help="Result offset for pagination.")
 @click.option("--order-by", default="-created_at", help="Field to sort by.")
 @click.option("--status", help="Filter by status (e.g. draft, sending, completed).")
+@click.argument("extra_filters", nargs=-1, metavar="KEY=VALUE")
 @click.pass_obj
-def list_mailers(client, limit, offset, order_by, status):
+def list_mailers(client, limit, offset, order_by, status, extra_filters):
     """List mailings."""
     filters = {}
     if status:
         filters["status"] = status
+    for f in extra_filters:
+        key, _, value = f.partition("=")
+        if not key or not _:
+            raise click.BadParameter(f"Invalid filter: {f!r}. Use KEY=VALUE.")
+        filters[key] = value
 
     data = client.list(
         "mailer", limit=limit, offset=offset, order_by=order_by, **filters

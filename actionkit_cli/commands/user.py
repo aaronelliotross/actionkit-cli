@@ -29,8 +29,9 @@ def user():
 @click.option("--state", help="Filter by US state.")
 @click.option("--country", help="Filter by country.")
 @click.option("--source", help="Filter by source.")
+@click.argument("extra_filters", nargs=-1, metavar="KEY=VALUE")
 @click.pass_obj
-def list_users(client, limit, offset, order_by, state, country, source):
+def list_users(client, limit, offset, order_by, state, country, source, extra_filters):
     """List users."""
     filters = {}
     if state:
@@ -39,6 +40,11 @@ def list_users(client, limit, offset, order_by, state, country, source):
         filters["country"] = country
     if source:
         filters["source"] = source
+    for f in extra_filters:
+        key, _, value = f.partition("=")
+        if not key or not _:
+            raise click.BadParameter(f"Invalid filter: {f!r}. Use KEY=VALUE.")
+        filters[key] = value
 
     data = client.list("user", limit=limit, offset=offset, order_by=order_by, **filters)
     print_list_response(data, USER_COLUMNS, title="Users")

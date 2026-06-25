@@ -31,8 +31,9 @@ def transaction():
 @click.option("--account", help="Filter by merchant account name.")
 @click.option("--status", help="Filter by transaction status.")
 @click.option("--type", "txn_type", help="Filter by transaction type (e.g. sale, refund).")
+@click.argument("extra_filters", nargs=-1, metavar="KEY=VALUE")
 @click.pass_obj
-def list_transactions(client, limit, offset, order_by, order_id, account, status, txn_type):
+def list_transactions(client, limit, offset, order_by, order_id, account, status, txn_type, extra_filters):
     """List transactions."""
     filters = {}
     if order_id:
@@ -43,6 +44,11 @@ def list_transactions(client, limit, offset, order_by, order_id, account, status
         filters["status"] = status
     if txn_type:
         filters["type"] = txn_type
+    for f in extra_filters:
+        key, _, value = f.partition("=")
+        if not key or not _:
+            raise click.BadParameter(f"Invalid filter: {f!r}. Use KEY=VALUE.")
+        filters[key] = value
 
     data = client.list(
         "transaction", limit=limit, offset=offset, order_by=order_by, **filters

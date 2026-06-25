@@ -22,8 +22,9 @@ def page():
 )
 @click.option("--status", help="Filter by status (e.g. active, inactive).")
 @click.option("--name-contains", help="Filter by name (case-insensitive contains).")
+@click.argument("extra_filters", nargs=-1, metavar="KEY=VALUE")
 @click.pass_obj
-def list_pages(client, limit, offset, order_by, page_type, status, name_contains):
+def list_pages(client, limit, offset, order_by, page_type, status, name_contains, extra_filters):
     """List pages."""
     filters = {}
     if page_type:
@@ -32,6 +33,11 @@ def list_pages(client, limit, offset, order_by, page_type, status, name_contains
         filters["status"] = status
     if name_contains:
         filters["name__icontains"] = name_contains
+    for f in extra_filters:
+        key, _, value = f.partition("=")
+        if not key or not _:
+            raise click.BadParameter(f"Invalid filter: {f!r}. Use KEY=VALUE.")
+        filters[key] = value
 
     data = client.list("page", limit=limit, offset=offset, order_by=order_by, **filters)
     print_list_response(data, PAGE_COLUMNS, title="Pages")

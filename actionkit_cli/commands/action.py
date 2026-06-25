@@ -21,14 +21,20 @@ def action():
 @click.option("--order-by", default="-created_at", help="Field to sort by.")
 @click.option("--page", "page_id", type=int, help="Filter by page ID.")
 @click.option("--user", "user_id", type=int, help="Filter by user ID.")
+@click.argument("extra_filters", nargs=-1, metavar="KEY=VALUE")
 @click.pass_obj
-def list_actions(client, limit, offset, order_by, page_id, user_id):
+def list_actions(client, limit, offset, order_by, page_id, user_id, extra_filters):
     """List actions."""
     filters = {}
     if page_id:
         filters["page"] = page_id
     if user_id:
         filters["user"] = user_id
+    for f in extra_filters:
+        key, _, value = f.partition("=")
+        if not key or not _:
+            raise click.BadParameter(f"Invalid filter: {f!r}. Use KEY=VALUE.")
+        filters[key] = value
 
     data = client.list(
         "action", limit=limit, offset=offset, order_by=order_by, **filters
