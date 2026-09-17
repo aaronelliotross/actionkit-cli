@@ -27,8 +27,24 @@ class ActionKitClient:
         resp = self._client.post(self._url(path), json=data)
         resp.raise_for_status()
         if resp.status_code == 204 or not resp.content:
-            return {}
+            return self._created(resp)
         return resp.json()
+
+    def _created(self, resp) -> dict:
+        """Resolve an empty create response via its Location header.
+
+        ActionKit answers a successful POST with 201 and no body, so without
+        this a caller cannot tell what was created.
+        """
+        location = resp.headers.get("Location")
+        if not location:
+            return {}
+        try:
+            follow = self._client.get(location, headers={"Accept": "application/json"})
+            follow.raise_for_status()
+            return follow.json()
+        except (httpx.HTTPError, ValueError):
+            return {"resource_uri": location}
 
     def put(self, path: str, data: dict) -> dict:
         resp = self._client.put(self._url(path), json=data)

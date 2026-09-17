@@ -54,6 +54,11 @@ actionkit --help
 | `mailer`      | Manage mailings                    |
 | `report`      | Run saved reports and SQL queries  |
 | `translation` | Manage translation strings         |
+| `transaction` | Manage transactions                |
+| `hash`        | ActionKit hash helpers             |
+
+Any other ActionKit resource name works too — see
+[Generic resource commands](#generic-resource-commands).
 
 ### Examples
 
@@ -86,6 +91,80 @@ actionkit translation get nl donate_button
 actionkit action create --page my_petition --email user@example.com -f source=homepage
 ```
 
+### Generic resource commands
+
+ActionKit exposes over 200 REST resources; only a handful have a dedicated
+command group. Any other resource name falls back to generic `create`, `list`
+and `get` commands built on the uniform REST endpoints:
+
+```bash
+# List and inspect any resource
+actionkit formfield list
+actionkit formfield list form_id=3708 --limit 50
+actionkit formfield get 3
+actionkit orderrecurring list status=active --json
+
+# Create a new instance from KEY=VALUE pairs
+actionkit formfield create name=pronouns form_id:=3708
+```
+
+#### Values and types
+
+Shell arguments are strings, so `create` (and `list` filters) use an
+httpie-style syntax to express the other JSON types:
+
+| Syntax       | Value sent                                  |
+|--------------|---------------------------------------------|
+| `key=value`  | the string `"value"` — always a string      |
+| `key:=JSON`  | parsed as JSON: numbers, `true`, `null`, arrays, objects |
+| `key=@PATH`  | the contents of `PATH`, as a string         |
+| `key:=@PATH` | the contents of `PATH`, parsed as JSON      |
+
+```bash
+actionkit formfield create \
+  name=pronouns \
+  form_id:=3708 \
+  ordering:=1 \
+  required:=true \
+  options_json:='["she/her", "he/him", "they/them"]' \
+  help_text=@help.html
+```
+
+Because `key=value` never guesses, string data that looks like JSON survives
+intact: `zip=01234` stays `"01234"` rather than becoming `1234`.
+
+#### Building a body from a file
+
+`--json` supplies a base body, which `KEY=VALUE` pairs then override. This
+makes an existing payload reusable as a template:
+
+```bash
+actionkit formfield create --json field.json
+actionkit formfield create --json field.json name=last_name ordering:=2
+cat field.json | actionkit formfield create --json - name=last_name
+```
+
+#### Checking before you POST
+
+`--dry-run` prints the assembled request body and sends nothing:
+
+```bash
+$ actionkit formfield create name=pronouns form_id:=3708 --dry-run
+POST /rest/v1/formfield/
+{
+  "name": "pronouns",
+  "form_id": 3708
+}
+```
+
+A resource that doesn't exist is reported rather than raising a traceback,
+and validation errors show the API's response body:
+
+```
+$ actionkit formfeild list
+Error: No ActionKit resource 'formfeild' (GET .../rest/v1/formfeild/ returned 404).
+```
+
 ## Development
 
 ### Setup
@@ -101,10 +180,16 @@ direnv allow             # or: source .venv/bin/activate
 This project uses [Black](https://black.readthedocs.io/) for code formatting:
 
 ```bash
-uv run black actionkit_cli/
+uv run python -m black actionkit_cli/ tests/
 ```
 
 Run this before committing.
+
+### Tests
+
+```bash
+uv run pytest
+```
 
 ### Project structure
 
@@ -114,8 +199,10 @@ actionkit_cli/
 ├── client.py           # ActionKit REST API client (httpx)
 ├── config.py           # Environment variable loading
 ├── output.py           # Rich-based output formatting
+├── params.py           # KEY=VALUE / KEY:=JSON argument parsing
 └── commands/           # Command groups (one file per resource)
     ├── action.py
+    ├── generic.py      # Fallback create/list/get for any resource
     ├── mailer.py
     ├── page.py
     ├── report.py
@@ -136,3 +223,7 @@ actionkit_cli/
 - List commands should support `--limit`, `--offset`, and `--order-by` options.
 - Destructive commands should use `@click.confirmation_option`.
 - Use `client.list()` for paginated listing and `client.detail()` for single-resource retrieval.
+- Parse `KEY=VALUE` arguments with `parse_assignments()` from `params.py` rather than
+  hand-rolling `str.partition("=")`, so typing works the same everywhere.
+- A dedicated group is only worth adding when a resource needs typed options,
+  validation or multi-step behaviour; otherwise the generic commands cover it.

@@ -24,7 +24,9 @@ def page():
 @click.option("--name-contains", help="Filter by name (case-insensitive contains).")
 @click.argument("extra_filters", nargs=-1, metavar="KEY=VALUE")
 @click.pass_obj
-def list_pages(client, limit, offset, order_by, page_type, status, name_contains, extra_filters):
+def list_pages(
+    client, limit, offset, order_by, page_type, status, name_contains, extra_filters
+):
     """List pages."""
     filters = {}
     if page_type:

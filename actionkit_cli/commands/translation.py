@@ -57,7 +57,9 @@ def set_translation(client, iso_code, key, value):
         except FileNotFoundError:
             raise click.UsageError(f"File not found: {file_path}")
         if not isinstance(updates, dict):
-            raise click.UsageError("JSON file must contain an object of key-value pairs.")
+            raise click.UsageError(
+                "JSON file must contain an object of key-value pairs."
+            )
     else:
         if not value:
             raise click.UsageError("VALUE is required when setting a single key.")
@@ -131,7 +133,9 @@ def list_languages(client):
 @translation.command("delete")
 @click.argument("iso_code")
 @click.argument("key")
-@click.confirmation_option(prompt="Are you sure you want to delete this translation key?")
+@click.confirmation_option(
+    prompt="Are you sure you want to delete this translation key?"
+)
 @click.pass_obj
 def delete_translation(client, iso_code, key):
     """Delete a translation key from a language."""

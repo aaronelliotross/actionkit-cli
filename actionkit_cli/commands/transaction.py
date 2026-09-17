@@ -3,6 +3,7 @@
 import click
 
 from actionkit_cli.output import print_json, print_list_response
+from actionkit_cli.params import parse_assignments
 
 TRANSACTION_COLUMNS = [
     "id",
@@ -30,10 +31,14 @@ def transaction():
 @click.option("--order", "order_id", type=int, help="Filter by order ID.")
 @click.option("--account", help="Filter by merchant account name.")
 @click.option("--status", help="Filter by transaction status.")
-@click.option("--type", "txn_type", help="Filter by transaction type (e.g. sale, refund).")
+@click.option(
+    "--type", "txn_type", help="Filter by transaction type (e.g. sale, refund)."
+)
 @click.argument("extra_filters", nargs=-1, metavar="KEY=VALUE")
 @click.pass_obj
-def list_transactions(client, limit, offset, order_by, order_id, account, status, txn_type, extra_filters):
+def list_transactions(
+    client, limit, offset, order_by, order_id, account, status, txn_type, extra_filters
+):
     """List transactions."""
     filters = {}
     if order_id:
@@ -66,16 +71,26 @@ def get_transaction(client, transaction_id):
 
 
 @transaction.command("create")
-@click.option("--order", "order_id", type=int, required=True, help="Order ID to attach this transaction to.")
+@click.option(
+    "--order",
+    "order_id",
+    type=int,
+    required=True,
+    help="Order ID to attach this transaction to.",
+)
 @click.option("--account", required=True, help="Merchant account name.")
 @click.option("--amount", required=True, help="Transaction amount (decimal).")
-@click.option("--currency", default="USD", show_default=True, help="3-letter currency code.")
+@click.option(
+    "--currency", default="USD", show_default=True, help="3-letter currency code."
+)
 @click.option(
     "--type",
     "txn_type",
     default="sale",
     show_default=True,
-    type=click.Choice(["sale", "refund", "credit", "auth", "void"], case_sensitive=False),
+    type=click.Choice(
+        ["sale", "refund", "credit", "auth", "void"], case_sensitive=False
+    ),
     help="Transaction type.",
 )
 @click.option(
@@ -84,12 +99,21 @@ def get_transaction(client, transaction_id):
     show_default=True,
     help="Transaction status.",
 )
-@click.option("--success/--failed", default=True, help="Whether the transaction succeeded.")
-@click.option("--test-mode", is_flag=True, help="Mark as a test-mode transaction.")
-@click.option("--failure-code", help="Processor failure code (for failed transactions).")
-@click.option("--failure-description", help="Failure description (for failed transactions).")
 @click.option(
-    "--field", "-f", multiple=True, help="Additional field as key=value (repeatable)."
+    "--success/--failed", default=True, help="Whether the transaction succeeded."
+)
+@click.option("--test-mode", is_flag=True, help="Mark as a test-mode transaction.")
+@click.option(
+    "--failure-code", help="Processor failure code (for failed transactions)."
+)
+@click.option(
+    "--failure-description", help="Failure description (for failed transactions)."
+)
+@click.option(
+    "--field",
+    "-f",
+    multiple=True,
+    help="Additional field as KEY=VALUE or KEY:=JSON (repeatable).",
 )
 @click.pass_obj
 def create_transaction(
@@ -122,11 +146,7 @@ def create_transaction(
     if failure_description:
         data["failure_description"] = failure_description
 
-    for f in field:
-        key, sep, value = f.partition("=")
-        if not key or not sep:
-            raise click.BadParameter(f"Invalid field format: {f!r}. Use key=value.")
-        data[key] = value
+    data.update(parse_assignments(field))
 
     result = client.post("transaction", data)
     click.echo("Transaction created.")
