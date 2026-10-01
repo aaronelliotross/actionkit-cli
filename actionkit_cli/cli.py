@@ -3,6 +3,7 @@
 import click
 
 from actionkit_cli.client import ActionKitClient
+from actionkit_cli.commands.generic import ResourceGroup, attach_generic_commands
 from actionkit_cli.config import load_config
 
 
@@ -49,13 +50,17 @@ class LazyClient(ActionKitClient):
             super().close()
 
 
-@click.group()
+@click.group(cls=ResourceGroup)
 @click.version_option(version="0.1.0")
 @click.pass_context
 def cli(ctx):
-    """Command-line interface for the ActionKit API."""
-    ctx.ensure_object(dict)
-    ctx.obj = LazyClient()
+    """Command-line interface for the ActionKit API.
+
+    Resources without a dedicated command group below still support the
+    generic `create`, `list` and `get` commands, e.g. `actionkit formfield list`.
+    """
+    if ctx.obj is None:
+        ctx.obj = LazyClient()
 
 
 @cli.result_callback()
@@ -76,11 +81,18 @@ from actionkit_cli.commands import (  # noqa: E402
     user,
 )
 
-cli.add_command(user.user)
-cli.add_command(page.page)
-cli.add_command(action.action)
-cli.add_command(mailer.mailer)
+# Groups that map one-to-one onto a REST resource also get the generic
+# commands they don't define themselves (e.g. `user create`). `report`,
+# `translation` and `hash` do not map onto a resource of the same name.
+for _group, _resource in [
+    (user.user, "user"),
+    (page.page, "page"),
+    (action.action, "action"),
+    (mailer.mailer, "mailer"),
+    (transaction.transaction, "transaction"),
+]:
+    cli.add_command(attach_generic_commands(_group, _resource))
+
 cli.add_command(report.report)
 cli.add_command(translation.translation)
-cli.add_command(transaction.transaction)
 cli.add_command(hash.hash)
