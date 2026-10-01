@@ -58,7 +58,8 @@ def fetch_ref(client, uri: str) -> dict | None:
     try:
         return client.get(uri.removeprefix(API_PREFIX))
     except httpx.HTTPStatusError as exc:
-        # Deleted pages still appear on old actions.
+        # Deleted pages still appear on old actions, and some user links
+        # point at records that were never created.
         if exc.response.status_code != 404:
             with api_errors(uri):
                 raise
@@ -144,8 +145,9 @@ def export(client, email, output, fmt):
     }
     for key in DETAIL_LINKS:
         if user.get(key):
-            with api_errors(key):
-                result[key] = client.get(user[key].removeprefix(API_PREFIX))
+            # Not every user has e.g. a useroriginal record; the link is
+            # present regardless.
+            result[key] = fetch_ref(client, user[key]) or {}
     for key, (resource, filters) in list_links(user).items():
         click.echo(f"Fetching {key}...", err=True)
         with api_errors(resource):

@@ -260,3 +260,13 @@ def test_html_format_shows_recipients_and_letter_template():
     assert "Please act" in letters
     assert client.fetched.count("target/9/") == 1
     assert client.fetched.count("letterform/3/") == 1
+
+
+def test_missing_detail_record_is_exported_as_empty():
+    client = PagedClient()
+    client.missing = {"useroriginal/7/"}
+    result, _ = run(["a@b.eu"], client)
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.stdout)
+    assert data["useroriginal"] == {}
+    assert data["location"] == {"resource_uri": "/rest/v1/location/7/"}

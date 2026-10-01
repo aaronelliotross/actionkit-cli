@@ -26,7 +26,7 @@ META = {"exported_at", "email", "user"}
 
 DETAIL_SECTIONS = [
     ("location", "Location"),
-    ("useroriginal", "Original sign-up details"),
+    ("useroriginal", "Original address"),
 ]
 
 LIST_SECTIONS = [
