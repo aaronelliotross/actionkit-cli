@@ -6,8 +6,10 @@ from datetime import datetime, timezone
 from urllib.parse import parse_qsl, urlsplit
 
 import click
+import httpx
 
 from actionkit_cli.commands.generic import api_errors
+from actionkit_cli.gdpr_html import ref_key, render_html
 
 PAGE_SIZE = 100
 API_PREFIX = "/rest/v1/"
@@ -51,13 +53,79 @@ def list_links(user: dict) -> dict[str, tuple[str, dict]]:
     return links
 
 
+def fetch_ref(client, uri: str) -> dict | None:
+    """Fetch the object a URI points at, or None if it has been deleted."""
+    try:
+        return client.get(uri.removeprefix(API_PREFIX))
+    except httpx.HTTPStatusError as exc:
+        # Deleted pages still appear on old actions.
+        if exc.response.status_code != 404:
+            with api_errors(uri):
+                raise
+        return None
+
+
+def is_letter(action: dict) -> bool:
+    return (action.get("resource_uri") or "").startswith(API_PREFIX + "letteraction/")
+
+
+def resolve_references(client, export: dict) -> tuple[dict, dict]:
+    """Look up what the readable export needs beyond the raw data.
+
+    Returns `labels`, mapping `ref_key()`s of pages, lists and letter
+    recipients to display names, and `letters`, mapping letter pages to
+    their letter template. Each distinct object is fetched once. Actions
+    get their page's title too, so orders and transactions show the
+    campaign.
+    """
+    actions = export.get("actions", [])
+    uris = {a.get("page") for a in actions}
+    uris |= {t for a in actions for t in a.get("targeted", [])}
+    for key in ("subscriptions", "subscriptionhistory"):
+        uris |= {r.get("list") for r in export.get(key, [])}
+    labels, letters = {}, {}
+    for uri in sorted(u for u in uris if ref_key(u)):
+        key = ref_key(uri)
+        obj = fetch_ref(client, uri)
+        if obj is None:
+            labels[key] = f"{key[0].capitalize()} no longer available"
+            continue
+        labels[key] = (
+            obj.get("title")
+            or obj.get("title_full")
+            or obj.get("full_name")
+            or obj.get("name")
+        )
+        form_uri = obj.get("cms_form") or ""
+        if form_uri.startswith(API_PREFIX + "letterform/"):
+            form = fetch_ref(client, form_uri) or {}
+            text = [form.get(k) for k in ("statement_leadin", "letter_text")]
+            letters[key] = "\n\n".join(t for t in text if t)
+    # Orders point at an action and transactions at an order, so chain the
+    # campaign title along.
+    for key, via in (("actions", "page"), ("orders", "action")):
+        for obj in export.get(key, []):
+            title = labels.get(ref_key(obj.get(via)))
+            if title and ref_key(obj.get("resource_uri")):
+                labels[ref_key(obj["resource_uri"])] = title
+    return labels, letters
+
+
 @gdpr.command("export")
 @click.argument("email")
 @click.option(
-    "--output", "-o", type=click.Path(dir_okay=False), help="Write JSON to this file."
+    "--output", "-o", type=click.Path(dir_okay=False), help="Write to this file."
+)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["json", "html"]),
+    default="json",
+    show_default=True,
+    help="json is the complete record; html is a readable document to send.",
 )
 @click.pass_obj
-def export(client, email, output):
+def export(client, email, output, fmt):
     """Export all personal data held for EMAIL (GDPR article 15)."""
     if output:
         directory = os.path.dirname(os.path.abspath(output))
@@ -89,7 +157,22 @@ def export(client, email, output):
             client, "transaction", order__user=user["id"]
         )
 
-    text = json.dumps(result, indent=2, default=str)
+    # The generic action listing leaves out who a letter was sent to.
+    if any(is_letter(a) for a in result.get("actions", [])):
+        click.echo("Fetching letter recipients...", err=True)
+        with api_errors("letteraction"):
+            letters = fetch_all(client, "letteraction", user=user["id"])
+        targeted = {la["id"]: la.get("targeted", []) for la in letters}
+        for action in result["actions"]:
+            if is_letter(action) and action.get("id") in targeted:
+                action["targeted"] = targeted[action["id"]]
+
+    if fmt == "html":
+        click.echo("Looking up campaign, list and recipient names...", err=True)
+        labels, letters = resolve_references(client, result)
+        text = render_html(result, labels, letters).rstrip("\n")
+    else:
+        text = json.dumps(result, indent=2, default=str)
     if output:
         with open(output, "w") as f:
             f.write(text + "\n")

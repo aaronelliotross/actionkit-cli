@@ -36,6 +36,8 @@ class PagedClient:
         self.listed = []
         self.fetched = []
         self.raise_for = None
+        self.missing = set()
+        self.objects = {}
 
     def list(self, resource, **kwargs):
         self.listed.append((resource, kwargs))
@@ -49,7 +51,11 @@ class PagedClient:
 
     def get(self, path, params=None):
         self.fetched.append(path)
-        return {"resource_uri": f"/rest/v1/{path}"}
+        if path in self.missing:
+            request = httpx.Request("GET", f"https://ak/rest/v1/{path}")
+            response = httpx.Response(404, request=request, json={})
+            raise httpx.HTTPStatusError("gone", request=request, response=response)
+        return self.objects.get(path, {"resource_uri": f"/rest/v1/{path}"})
 
     def close(self):
         pass
@@ -143,3 +149,114 @@ def test_unwritable_output_path_fails_before_fetching_anything(tmp_path):
     assert result.exit_code != 0
     assert "Cannot write" in result.output
     assert client.listed == []
+
+
+def test_html_format_resolves_each_page_and_list_once():
+    pages = {
+        ("action", 0): page(
+            [
+                {"id": 1, "page": "/rest/v1/petitionpage/5/"},
+                {"id": 2, "page": "/rest/v1/petitionpage/5/"},
+            ]
+        ),
+        ("subscriptionhistory", 0): page([{"list": "/rest/v1/list/1/"}]),
+    }
+    user = dict(USER, subscriptionhistory="/rest/v1/subscriptionhistory/?user=7")
+    client = PagedClient(pages=pages, users=[user])
+    result, _ = run(["a@b.eu", "--format", "html"], client)
+    assert result.exit_code == 0, result.output
+    assert client.fetched.count("petitionpage/5/") == 1
+    assert client.fetched.count("list/1/") == 1
+    assert result.stdout.startswith("<!doctype html>")
+
+
+def test_html_format_survives_deleted_pages():
+    pages = {("action", 0): page([{"id": 1, "page": "/rest/v1/donationpage/9/"}])}
+    client = PagedClient(pages=pages)
+    client.missing = {"donationpage/9/"}
+    result, _ = run(["a@b.eu", "--format", "html"], client)
+    assert result.exit_code == 0, result.output
+    assert "Page no longer available" in result.stdout
+
+
+def test_html_format_shows_campaign_on_orders_and_transactions():
+    pages = {
+        ("action", 0): page(
+            [
+                {
+                    "page": "/rest/v1/donationpage/5/",
+                    "resource_uri": "/rest/v1/donationaction/3/",
+                }
+            ]
+        ),
+        ("order", 0): page(
+            [
+                {
+                    "action": "/rest/v1/donationaction/3/",
+                    "resource_uri": "/rest/v1/order/8/",
+                    "transactions": ["/rest/v1/transaction/3/"],
+                }
+            ]
+        ),
+        ("transaction", 0): page([{"order": "/rest/v1/order/8/"}]),
+    }
+    client = PagedClient(pages=pages)
+    client.get = lambda path, params=None: {"title": "Save the bees"}
+    result, _ = run(["a@b.eu", "--format", "html"], client)
+    assert result.exit_code == 0, result.output
+    payments = result.stdout.split("<h2>Payments</h2>")[1].split("</section>")[0]
+    assert "Save the bees" in payments
+    donations = result.stdout.split("<h2>Donations</h2>")[1].split("</section>")[0]
+    assert donations.count("Save the bees") == 1
+
+
+LETTER_ACTION = {
+    "id": 4,
+    "page": "/rest/v1/letterpage/6/",
+    "resource_uri": "/rest/v1/letteraction/4/",
+    "fields": {"comment": "Please act"},
+}
+
+
+def letter_client():
+    pages = {
+        ("action", 0): page([LETTER_ACTION, {"id": 5}]),
+        ("letteraction", 0): page(
+            [{"id": 4, "targeted": ["/rest/v1/target/9/", "/rest/v1/target/9/"]}]
+        ),
+    }
+    client = PagedClient(pages=pages)
+    client.objects = {
+        "letterpage/6/": {
+            "title": "Write to your MEP",
+            "cms_form": "/rest/v1/letterform/3/",
+        },
+        "letterform/3/": {"statement_leadin": "Dear MEP,", "letter_text": "Vote yes."},
+        "target/9/": {"title_full": "MEP Jane Doe", "full_name": "Jane Doe"},
+    }
+    return client
+
+
+def test_letter_recipients_are_merged_into_actions():
+    result, client = run(["a@b.eu"], letter_client())
+    assert result.exit_code == 0, result.output
+    actions = json.loads(result.stdout)["actions"]
+    assert actions[0]["targeted"] == ["/rest/v1/target/9/", "/rest/v1/target/9/"]
+    assert "targeted" not in actions[1]
+    assert ("letteraction", {"limit": 100, "offset": 0, "user": 7}) in client.listed
+
+
+def test_no_letteraction_query_without_letter_actions():
+    _, client = run(["a@b.eu"])
+    assert "letteraction" not in [r for r, _ in client.listed]
+
+
+def test_html_format_shows_recipients_and_letter_template():
+    result, client = run(["a@b.eu", "--format", "html"], letter_client())
+    assert result.exit_code == 0, result.output
+    letters = result.stdout.split("<h2>Letters</h2>")[1].split("</section>")[0]
+    assert "MEP Jane Doe" in letters
+    assert "Dear MEP," in letters and "Vote yes." in letters
+    assert "Please act" in letters
+    assert client.fetched.count("target/9/") == 1
+    assert client.fetched.count("letterform/3/") == 1
