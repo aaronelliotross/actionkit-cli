@@ -20,3 +20,7 @@ wheels/
 # ctags
 tags
 tags.lock
+
+
+# one-off scripts
+scripts/

@@ -33,7 +33,7 @@ as `python -m black`.
 
 **API client**: `actionkit_cli/client.py` — thin httpx wrapper around ActionKit's REST API (`/rest/v1/`). Provides `get`, `post`, `put`, `patch`, `delete`, `list`, and `detail` methods. All mutating methods handle empty response bodies.
 
-**Commands**: Each file in `actionkit_cli/commands/` defines a Click group (user, page, action, mailer, report, translation) registered in `cli.py`. Commands follow a consistent pattern: Click decorators for args/options, `@click.pass_obj` to receive the client, call client methods, output via `print_json` or `print_list_response`.
+**Commands**: Each file in `actionkit_cli/commands/` defines a Click group (user, page, action, mailer, report, translation, gdpr) registered in `cli.py`. Commands follow a consistent pattern: Click decorators for args/options, `@click.pass_obj` to receive the client, call client methods, output via `print_json` or `print_list_response`.
 
 **Generic commands**: `actionkit_cli/commands/generic.py` — ActionKit exposes 200+ resources but only a few have hand-written groups. `ResourceGroup.get_command` treats any unknown first word as a resource name and builds a group with `create`, `list` and `get` on the fly, so `actionkit formfield create name=x` works without any per-resource code. `api_errors()` converts `httpx.HTTPStatusError` into readable messages (404 names the resource; other statuses show the response body).
 
