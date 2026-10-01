@@ -157,3 +157,36 @@ def test_long_values_and_fields_go_in_a_full_width_row_below_the_record():
     assert "Utm source" in detail[0]
     assert "MEP Jane Doe 9" in detail[0]
     assert "<td>Petition</td>" in table
+
+
+def test_profile_shows_user_id():
+    html = render_html(export(), {})
+    assert "<dt>User ID</dt><dd>7</dd>" in html
+
+
+def test_actions_table_shows_action_and_page_ids():
+    actions = [
+        {"id": 47, "page": "/rest/v1/donationpage/53/", "type": "Donation"},
+        {"id": 48, "page": "/rest/v1/petitionpage/99/", "type": "Petition"},
+    ]
+    html = render_html(export(actions=actions), {("page", "53"): "Save the bees"})
+    table = html.split("<h2>Actions</h2>")[1].split("</section>")[0]
+    head = re.findall(r"<th>(.*?)</th>", table)
+    assert head[:3] == ["Action ID", "Campaign", "Page ID"]
+    rows = re.findall(r"<tr>(.*?)</tr>", table)[1:]
+    assert re.findall(r"<td>(.*?)</td>", rows[0])[:3] == ["47", "Save the bees", "53"]
+    # The page ID still identifies a page whose title could not be found.
+    assert re.findall(r"<td>(.*?)</td>", rows[1])[:3] == ["48", "", "99"]
+
+
+def test_letters_show_action_and_page_ids():
+    action = {
+        "id": 4,
+        "page": "/rest/v1/letterpage/6/",
+        "resource_uri": "/rest/v1/letteraction/4/",
+        "targeted": ["/rest/v1/target/9/"],
+    }
+    html = render_html(export(actions=[action]), {}, {("page", "6"): "Dear MEP,"})
+    section = html.split("<h2>Letters</h2>")[1].split("</section>")[0]
+    assert "<dt>Action ID</dt><dd>4</dd>" in section
+    assert "<dt>Page ID</dt><dd>6</dd>" in section

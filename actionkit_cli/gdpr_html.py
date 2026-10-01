@@ -47,7 +47,9 @@ LONG_TEXT = 80
 # Columns shown first in tables, when present.
 PREFERRED_COLUMNS = [
     "created_at",
+    "action_id",
     "page",
+    "page_id",
     "action",
     "order",
     "list",
@@ -67,6 +69,8 @@ LABELS = {
     "action": "Campaign",
     "order": "Campaign",
     "targeted": "Recipients",
+    "action_id": "Action ID",
+    "page_id": "Page ID",
     "ip_address": "IP address",
     "zip": "ZIP",
 }
@@ -175,8 +179,19 @@ def render_dl(items: list[tuple[str, str]]) -> str:
     return f"<dl>{rows}</dl>"
 
 
+def page_id(action: dict) -> str | None:
+    key = ref_key(action.get("page"))
+    return key[1] if key else None
+
+
+def with_ids(action: dict) -> dict:
+    """An action with its action and page IDs, which staff and supporters
+    can quote back when following up on a request."""
+    return {"action_id": action.get("id"), "page_id": page_id(action), **action}
+
+
 def render_profile(user: dict, labels) -> str:
-    items = []
+    items = [("User ID", str(user["id"]))] if user.get("id") else []
     for key, text in visible_items(user, labels):
         if key == "fields":
             continue
@@ -252,6 +267,8 @@ def render_letters(actions: list[dict], labels, letters) -> str | None:
             continue
         items = [
             ("Date", display(action.get("created_at"), labels)),
+            ("Action ID", display(action.get("id"), labels)),
+            ("Page ID", page_id(action)),
             ("Campaign", display(action.get("page"), labels)),
             ("Recipients", display(action.get("targeted"), labels)),
             ("Letter text", template or None),
@@ -299,7 +316,10 @@ def render_html(export: dict, labels: dict, letters: dict | None = None) -> str:
             )
     for key, title in LIST_SECTIONS:
         if key in export:
-            parts.append(section(title, render_table(export[key], labels)))
+            records = export[key]
+            if key == "actions":
+                records = [with_ids(a) for a in records]
+            parts.append(section(title, render_table(records, labels)))
         if key == "actions":
             body = render_letters(export.get("actions", []), labels, letters or {})
             if body:
