@@ -131,3 +131,29 @@ def test_letters_section_shows_template_comment_and_recipients():
 
 def test_no_letters_section_without_letter_actions():
     assert "<h2>Letters</h2>" not in render_html(export(actions=[]), {})
+
+
+def test_long_values_and_fields_go_in_a_full_width_row_below_the_record():
+    actions = [
+        {
+            "created_at": "2024-01-02T03:04:05",
+            "type": "Petition",
+            "fields": {"comment": "I care about this " * 10, "utm_source": "x"},
+            "targeted": [f"/rest/v1/target/{i}/" for i in range(10)],
+        },
+        {"created_at": "2024-02-02T03:04:05", "type": "Petition"},
+    ]
+    labels = {("target", str(i)): f"MEP Jane Doe {i}" for i in range(10)}
+    table = render_html(export(actions=actions), labels).split("<h2>Actions</h2>")[1]
+    table = table.split("</section>")[0]
+    head = table.split("</thead>")[0]
+    assert "<th>Fields</th>" not in head
+    assert "<th>Recipients</th>" not in head
+    assert "<th>Type</th>" in head
+    detail = re.findall(r'<tr class="detail">(.*?)</tr>', table)
+    assert len(detail) == 1
+    assert "colspan=" in detail[0]
+    assert "Comment" in detail[0] and "I care about this" in detail[0]
+    assert "Utm source" in detail[0]
+    assert "MEP Jane Doe 9" in detail[0]
+    assert "<td>Petition</td>" in table

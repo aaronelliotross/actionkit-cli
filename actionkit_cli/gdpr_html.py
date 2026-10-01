@@ -41,6 +41,9 @@ LIST_SECTIONS = [
     ("usergeofields", "Geographic data"),
 ]
 
+# Values longer than this move out of table columns into a full-width row.
+LONG_TEXT = 80
+
 # Columns shown first in tables, when present.
 PREFERRED_COLUMNS = [
     "created_at",
@@ -86,6 +89,9 @@ table { border-collapse: collapse; width: 100%; font-size: 0.9em; }
 th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e4e4e4; vertical-align: top; }
 th { background: #f4f4f4; }
 td:first-child { white-space: nowrap; }
+tr:has(+ .detail) td { border-bottom: none; }
+.detail td { white-space: pre-wrap; padding: 0 8px 8px 24px; color: #333; }
+.detail p { margin: 2px 0; }
 @media print { .scroll { overflow: visible; } h2 { break-after: avoid; } tr { break-inside: avoid; } }
 """
 
@@ -182,34 +188,58 @@ def render_profile(user: dict, labels) -> str:
     return render_dl(items)
 
 
+def detail_lines(record: dict, key: str, text: str, labels) -> list[tuple[str, str]]:
+    """Lines for a record's full-width row; `fields` gets one line each."""
+    if key == "fields":
+        return [
+            (humanize(k), t)
+            for k, v in record["fields"].items()
+            if (t := display(v, labels)) is not None
+        ]
+    return [(humanize(key), text)]
+
+
 def render_table(records: list[dict], labels) -> str:
-    rows = [r for r in (visible_items(r, labels) for r in records) if r]
+    rows = [(r, items) for r in records if (items := visible_items(r, labels))]
     if not rows:
         return '<p class="empty">No records</p>'
     keys = []
-    for row in rows:
-        for key, _ in row:
+    for _, items in rows:
+        for key, _ in items:
             if key not in keys:
                 keys.append(key)
+    # Free text such as comments would squash the table into tall narrow
+    # rows, so it goes in a full-width row under its record instead.
+    long_keys = {"fields"} | {
+        key for _, items in rows for key, text in items if len(text) > LONG_TEXT
+    }
     ordered = [k for k in PREFERRED_COLUMNS if k in keys]
     ordered += [k for k in keys if k not in ordered]
+    ordered = [k for k in ordered if k not in long_keys]
     # Keys sharing a label (e.g. a recurring donation's action and order both
     # give its campaign) collapse into one column.
     columns = list(dict.fromkeys(humanize(k) for k in ordered))
-    cells = []
-    for row in rows:
-        merged = {}
-        for key, text in row:
-            merged.setdefault(humanize(key), text)
-        cells.append(merged)
+    body = []
+    for record, items in rows:
+        merged, lines = {}, []
+        for key, text in items:
+            if key in long_keys:
+                lines += detail_lines(record, key, text, labels)
+            else:
+                merged.setdefault(humanize(key), text)
+        cells = "".join(f"<td>{escape(merged.get(c, ''))}</td>" for c in columns)
+        body.append(f"<tr>{cells}</tr>")
+        if lines:
+            text = "".join(
+                f"<p><strong>{escape(k)}:</strong> {escape(v)}</p>" for k, v in lines
+            )
+            body.append(
+                f'<tr class="detail"><td colspan="{max(len(columns), 1)}">{text}</td></tr>'
+            )
     head = "".join(f"<th>{escape(c)}</th>" for c in columns)
-    body = "".join(
-        "<tr>" + "".join(f"<td>{escape(r.get(c, ''))}</td>" for c in columns) + "</tr>"
-        for r in cells
-    )
     return (
         f'<div class="scroll"><table><thead><tr>{head}</tr></thead>'
-        f"<tbody>{body}</tbody></table></div>"
+        f"<tbody>{''.join(body)}</tbody></table></div>"
     )
 
 
